@@ -4,15 +4,25 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { FolderGitIcon, ChevronDown, Github, Sun, Moon, Menu, X } from "lucide-react"
+import { FolderGitIcon, ChevronDown, Github, Sun, Moon, Menu, X, FileText, Code, BookOpen } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 
 export function Navigation() {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
+
+  // Ensure component is mounted before rendering theme-dependent content
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const toggleTheme = () => {
+    setTheme(theme === "dark" ? "light" : "dark")
+  }
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 m-4">
@@ -37,15 +47,24 @@ export function Navigation() {
                     Resources <ChevronDown className="ml-1 h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="bg-black/80 backdrop-blur-md border-white/20 rounded-xl">
-                  <DropdownMenuItem className="text-white/80 hover:text-white hover:bg-white/10 rounded-lg">
-                    <Link href="/templates">Templates</Link>
+                <DropdownMenuContent className="bg-black/90 backdrop-blur-md border-white/20 rounded-xl p-2 min-w-[200px]">
+                  <DropdownMenuItem className="text-white/80 hover:text-white hover:bg-white/10 rounded-lg p-3 cursor-pointer">
+                    <Link href="/templates" className="flex items-center space-x-2 w-full">
+                      <FileText className="h-4 w-4" />
+                      <span>Templates</span>
+                    </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem className="text-white/80 hover:text-white hover:bg-white/10 rounded-lg">
-                    <Link href="/examples">Examples</Link>
+                  <DropdownMenuItem className="text-white/80 hover:text-white hover:bg-white/10 rounded-lg p-3 cursor-pointer">
+                    <Link href="/examples" className="flex items-center space-x-2 w-full">
+                      <Code className="h-4 w-4" />
+                      <span>Examples</span>
+                    </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem className="text-white/80 hover:text-white hover:bg-white/10 rounded-lg">
-                    <Link href="/docs">Documentation</Link>
+                  <DropdownMenuItem className="text-white/80 hover:text-white hover:bg-white/10 rounded-lg p-3 cursor-pointer">
+                    <Link href="/docs" className="flex items-center space-x-2 w-full">
+                      <BookOpen className="h-4 w-4" />
+                      <span>Documentation</span>
+                    </Link>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -75,14 +94,20 @@ export function Navigation() {
 
             {/* Right side buttons */}
             <div className="flex items-center space-x-3">
+              {/* Theme Toggle */}
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                onClick={toggleTheme}
                 className="text-white/80 hover:text-white hover:bg-white/10 rounded-xl"
+                aria-label="Toggle theme"
               >
-                <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-                <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+                {mounted && (
+                  <>
+                    <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+                    <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+                  </>
+                )}
               </Button>
 
               <Button
@@ -91,7 +116,7 @@ export function Navigation() {
                 className="text-white/80 hover:text-white hover:bg-white/10 rounded-xl"
                 asChild
               >
-                <Link href="https://github.com" target="_blank">
+                <Link href="https://github.com/tharun977/DevForge" target="_blank" rel="noopener noreferrer">
                   <Github className="h-4 w-4" />
                 </Link>
               </Button>
@@ -109,6 +134,7 @@ export function Navigation() {
                 size="icon"
                 className="md:hidden text-white/80 hover:text-white hover:bg-white/10 rounded-xl"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                aria-label="Toggle mobile menu"
               >
                 {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
               </Button>
