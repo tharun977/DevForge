@@ -206,3 +206,4 @@ const PortfolioTemplate = ({ user, repos }: PortfolioTemplateProps) => {
 }
 
 export default PortfolioTemplate
+export { PortfolioTemplate }

@@ -727,5 +727,3 @@ Special thanks to:
 **Made with ❤️ by the DevForge Team**
 
 *Empowering developers to showcase their work beautifully*
-
-</div>
