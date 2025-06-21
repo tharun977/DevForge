@@ -4,7 +4,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Sparkles, ChevronDown, Github, Sun, Moon, Menu, X } from "lucide-react"
+import { FolderGitIcon, ChevronDown, Github, Sun, Moon, Menu, X } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
 import { useState } from "react"
@@ -22,7 +22,7 @@ export function Navigation() {
             {/* Logo */}
             <Link href="/" className="flex items-center space-x-3 group">
               <div className="p-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl group-hover:scale-110 transition-transform">
-                <Sparkles className="h-5 w-5 text-white" />
+                <FolderGitIcon className="h-5 w-5 text-white" />
               </div>
               <span className="text-xl font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
                 DevForge
