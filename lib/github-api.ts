@@ -314,50 +314,68 @@ export class GitHubAPI {
   }
 
   async uploadFile(owner: string, repo: string, path: string, content: string, message: string) {
-    if (!this.token) {
-      throw new Error("GitHub token is required to upload files")
-    }
+    if (!this.token) throw new Error("GitHub token is required to upload files")
 
-    console.log(`Uploading file: ${path} to ${owner}/${repo}`)
-
-    const url = `${this.baseUrl}/repos/${owner}/${repo}/contents/${path}`
+    const url = `${this.baseUrl}/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`
     const encodedContent = Buffer.from(content).toString("base64")
 
-    // Check if file exists first
-    let sha: string | undefined
-    try {
-      const getResponse = await fetch(url, { headers: this.getHeaders() })
-      if (getResponse.ok) {
-        const existingFile = await getResponse.json()
-        sha = existingFile.sha
-        console.log(`File ${path} exists, updating with SHA: ${sha}`)
+    // Helper to actually send the PUT request
+    const doPut = async (sha?: string) => {
+      return await fetch(url, {
+        method: "PUT",
+        headers: {
+          ...this.getHeaders(),
+          Accept: "application/vnd.github+json", // modern media-type
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message,
+          content: encodedContent,
+          ...(sha && { sha }),
+        }),
+      })
+    }
+
+    // --- Retry logic --------------------------------------------------------
+    const maxRetries = 3
+    let delay = 800 // ms
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // If file exists, fetch SHA (optional; ignore 404)
+        let sha: string | undefined
+        if (attempt === 0) {
+          const getRes = await fetch(url, { headers: this.getHeaders() })
+          if (getRes.ok) sha = (await getRes.json()).sha
+        }
+
+        const putRes = await doPut(sha)
+        if (putRes.ok) {
+          return await putRes.json() // ✅ success
+        }
+
+        const msg = (await putRes.json().catch(() => ({}))).message || putRes.statusText
+        // Retry only for “resource not accessible” or 404 (repo not ready)
+        if (
+          attempt < maxRetries - 1 &&
+          (putRes.status === 403 || putRes.status === 404 || /resource not accessible/i.test(msg))
+        ) {
+          console.warn(`PUT ${path} failed (attempt ${attempt + 1}/${maxRetries}) – retrying in ${delay} ms…`)
+          await new Promise((r) => setTimeout(r, delay))
+          delay *= 2
+          continue
+        }
+
+        throw new Error(`Failed to upload ${path}: ${msg}`)
+      } catch (err) {
+        if (attempt < maxRetries - 1) {
+          console.warn(`uploadFile error (attempt ${attempt + 1}/${maxRetries}) – retrying in ${delay} ms…`)
+          await new Promise((r) => setTimeout(r, delay))
+          delay *= 2
+          continue
+        }
+        throw err
       }
-    } catch (error) {
-      console.log(`File ${path} doesn't exist, creating new file`)
     }
-
-    const response = await fetch(url, {
-      method: "PUT",
-      headers: {
-        ...this.getHeaders(),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        message,
-        content: encodedContent,
-        ...(sha && { sha }),
-      }),
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      console.error(`Failed to upload ${path}:`, errorData)
-      throw new Error(`Failed to upload file ${path}: ${errorData.message || response.statusText}`)
-    }
-
-    const result = await response.json()
-    console.log(`Successfully uploaded: ${path}`)
-    return result
   }
 
   async uploadMultipleFiles(
