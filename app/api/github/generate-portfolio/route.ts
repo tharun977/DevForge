@@ -2,6 +2,22 @@ import { type NextRequest, NextResponse } from "next/server"
 import { GitHubAPI } from "@/lib/github-api"
 import { PortfolioGenerator } from "@/lib/portfolio-generator"
 
+/** Returns `base`, `base-1`, `base-2`, … until one doesn’t exist */
+async function getUniqueRepoName(api: GitHubAPI, owner: string, base: string, maxAttempts = 5): Promise<string> {
+  let attempt = 0
+  while (attempt < maxAttempts) {
+    const name = attempt === 0 ? base : `${base}-${attempt}`
+    try {
+      // Will throw 404 if repo does NOT exist -- perfect, that means name is free
+      await api.getRepository(owner, name)
+      attempt += 1 // repo exists –> try next suffix
+    } catch {
+      return name // 404 → name available
+    }
+  }
+  throw new Error("Could not find an available repository name")
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { username, githubToken, createRepo = true } = await request.json()
@@ -24,14 +40,21 @@ export async function POST(request: NextRequest) {
 
     let repositoryUrl = null
     let deploymentUrl = null
+    let repoName = null
 
     // Create repository if requested and token is provided
     if (createRepo && githubToken) {
       try {
         console.log("Creating GitHub repository...")
-        const repoName = `${username}-portfolio`
 
-        // Create the repository
+        // ----- before (delete these three old lines) -----
+        // const repoName = `${username}-portfolio`
+        // const repository = await githubAPI.createRepository({ ... })
+        // repositoryUrl = repository.html_url
+        // ----- after -----
+        const desired = `${username}-portfolio`
+        repoName = await getUniqueRepoName(githubAPI, username, desired)
+
         const repository = await githubAPI.createRepository({
           name: repoName,
           description: `Portfolio website for ${user.name || user.login}`,
@@ -66,7 +89,7 @@ export async function POST(request: NextRequest) {
       repository: repositoryUrl
         ? {
             url: repositoryUrl,
-            name: `${username}-portfolio`,
+            name: repoName,
             deploymentUrl,
           }
         : null,
