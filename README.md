@@ -135,10 +135,10 @@ DevForge embraces a **modern glassmorphic design** that combines elegance with f
 
 1. **Clone the repository**
 
-   \`\`\`bash
+   ```bash
    git clone https://github.com/your-username/devforge.git
    cd devforge
-   \`\`\`
+   ```
 
 2. **Install dependencies**
 
