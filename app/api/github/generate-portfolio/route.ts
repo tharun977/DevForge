@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
         const repoName = `${username}-portfolio`
 
         // Create the repository
-        const repository = await githubAPI.createRepository(username, {
+        const repository = await githubAPI.createRepository({
           name: repoName,
           description: `Portfolio website for ${user.name || user.login}`,
           private: false,
