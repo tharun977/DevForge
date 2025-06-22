@@ -253,106 +253,24 @@ export class GitHubAPI {
     return await response.json()
   }
 
+  /**
+   * Upload many files by delegating to the high-level Contents API.
+   * This avoids git/trees edge-cases and works with both Classic and
+   * fine-grained PATs.
+   */
   async uploadMultipleFiles(
-    username: string,
-    repoName: string,
-    files: Array<{
-      path: string
-      content: string
-    }>,
-    message: string,
+    owner: string,
+    repo: string,
+    files: Array<{ path: string; content: string }>,
+    commitMessage = "Initial commit",
   ) {
     if (!this.token) {
       throw new Error("GitHub token is required to upload files")
     }
 
-    // Get the latest commit SHA
-    const branchResponse = await fetch(`${this.baseUrl}/repos/${username}/${repoName}/git/refs/heads/main`, {
-      headers: this.getHeaders(),
-    })
-
-    if (!branchResponse.ok) {
-      throw new Error("Failed to get branch information")
+    for (const file of files) {
+      await this.uploadFile(owner, repo, file.path, file.content, commitMessage)
     }
-
-    const branchData = await branchResponse.json()
-    const latestCommitSha = branchData.object.sha
-
-    // Get the tree SHA from the latest commit
-    const commitResponse = await fetch(`${this.baseUrl}/repos/${username}/${repoName}/git/commits/${latestCommitSha}`, {
-      headers: this.getHeaders(),
-    })
-
-    if (!commitResponse.ok) {
-      throw new Error("Failed to get commit information")
-    }
-
-    const commitData = await commitResponse.json()
-    const baseTreeSha = commitData.tree.sha
-
-    // Create tree with all files
-    const tree = files.map((file) => ({
-      path: file.path,
-      mode: "100644",
-      type: "blob",
-      content: file.content,
-    }))
-
-    const treeResponse = await fetch(`${this.baseUrl}/repos/${username}/${repoName}/git/trees`, {
-      method: "POST",
-      headers: {
-        ...this.getHeaders(),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        base_tree: baseTreeSha,
-        tree,
-      }),
-    })
-
-    if (!treeResponse.ok) {
-      throw new Error("Failed to create tree")
-    }
-
-    const treeData = await treeResponse.json()
-
-    // Create commit
-    const newCommitResponse = await fetch(`${this.baseUrl}/repos/${username}/${repoName}/git/commits`, {
-      method: "POST",
-      headers: {
-        ...this.getHeaders(),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        message,
-        tree: treeData.sha,
-        parents: [latestCommitSha],
-      }),
-    })
-
-    if (!newCommitResponse.ok) {
-      throw new Error("Failed to create commit")
-    }
-
-    const newCommitData = await newCommitResponse.json()
-
-    // Update reference
-    const updateRefResponse = await fetch(`${this.baseUrl}/repos/${username}/${repoName}/git/refs/heads/main`, {
-      method: "PATCH",
-      headers: {
-        ...this.getHeaders(),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        sha: newCommitData.sha,
-      }),
-    })
-
-    if (!updateRefResponse.ok) {
-      throw new Error("Failed to update reference")
-    }
-
-    return await updateRefResponse.json()
   }
 }
 
