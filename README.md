@@ -12,7 +12,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=for-the-badge\&logo=typescript)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38B2AC?style=for-the-badge\&logo=tailwind-css)](https://tailwindcss.com/)
 
-[🌟 Live Demo](https://v0-dynamic-portfolio-generator.vercel.app) • [📖 Documentation](https://devforge.dev/docs) • [🎨 Templates](https://devforge.dev/templates) • [💬 Discord](https://discord.gg/devforge)
+[🌟 Live Demo](https://devforgesite.vercel.app) • [📖 Documentation](https://devforgesite.vercel.app/docs) • [🎨 Templates](https://devforgesite.vercel.app/templates) • [💬 Discord](https://discord.gg/devforge)
 
 </div>
 
