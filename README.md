@@ -12,7 +12,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=for-the-badge\&logo=typescript)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38B2AC?style=for-the-badge\&logo=tailwind-css)](https://tailwindcss.com/)
 
-[🌟 Live Demo](https://v0-dynamic-portfolio-generator.vercel.app) • [📖 Documentation](https://devforge.dev/docs) • [🎨 Templates](https://devforge.dev/templates) • [💬 Discord](https://discord.gg/devforge)
+[🌟 Live Demo](https://devforgesite.vercel.app) • [📖 Documentation](https://devforgesite.vercel.app/docs) • [🎨 Templates](https://devforgesite.vercel.app/templates) • [💬 Discord](https://discord.gg/devforge)
 
 </div>
 
@@ -76,7 +76,7 @@ DevForge embraces a **modern glassmorphic design** that combines elegance with f
 
 ### **Glassmorphic Navigation**
 
-\`\`\`css
+```css
 /* Core glassmorphic styling */
 .glassmorphic-nav {
   background: rgba(255, 255, 255, 0.1);
@@ -85,7 +85,7 @@ DevForge embraces a **modern glassmorphic design** that combines elegance with f
   border-radius: 16px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 }
-\`\`\`
+```
 
 ### **Design Principles**
 
@@ -142,48 +142,48 @@ DevForge embraces a **modern glassmorphic design** that combines elegance with f
 
 2. **Install dependencies**
 
-   \`\`\`bash
+   ```bash
    npm install
    # or
    yarn install
-   \`\`\`
+   ```
 
 3. **Set up environment variables**
 
-   \`\`\`bash
+   ```bash
    cp .env.example .env.local
-   \`\`\`
+   ```
 
    Add your environment variables:
 
-   \`\`\`env
+   ```env
    NEXT_PUBLIC_BASE_URL=http://localhost:3000
    GITHUB_TOKEN=your_github_personal_access_token
-   \`\`\`
+   ```
 
 4. **Run the development server**
 
-   \`\`\`bash
+   ```bash
    npm run dev
    # or
    yarn dev
-   \`\`\`
+   ```
 
 5. **Open your browser**
    Navigate to [http://localhost:3000](http://localhost:3000)
 
 ### **First Portfolio**
 
-\`\`\`bash
+```bash
 # Generate a portfolio for a GitHub user
 curl http://localhost:3000/api/github/octocat
-\`\`\`
+```
 
 ---
 
 ## 📁 Project Structure
 
-\`\`\`plaintext
+```plaintext
 devforge/
 ├── app/                          # Next.js App Router
 │   ├── api/                      # API routes
@@ -219,4 +219,4 @@ devforge/
 ├── tailwind.config.ts            # Tailwind configuration
 ├── tsconfig.json                 # TypeScript configuration
 └── package.json                  # Dependencies
-\`\`\`
+```
