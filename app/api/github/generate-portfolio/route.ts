@@ -2,22 +2,6 @@ import { type NextRequest, NextResponse } from "next/server"
 import { GitHubAPI } from "@/lib/github-api"
 import { PortfolioGenerator } from "@/lib/portfolio-generator"
 
-/** Returns `base`, `base-1`, `base-2`, … until one doesn’t exist */
-async function getUniqueRepoName(api: GitHubAPI, owner: string, base: string, maxAttempts = 5): Promise<string> {
-  let attempt = 0
-  while (attempt < maxAttempts) {
-    const name = attempt === 0 ? base : `${base}-${attempt}`
-    try {
-      // Will throw 404 if repo does NOT exist -- perfect, that means name is free
-      await api.getRepository(owner, name)
-      attempt += 1 // repo exists –> try next suffix
-    } catch {
-      return name // 404 → name available
-    }
-  }
-  throw new Error("Could not find an available repository name")
-}
-
 export async function POST(request: NextRequest) {
   try {
     const { username, githubToken, createRepo = true } = await request.json()
@@ -40,40 +24,57 @@ export async function POST(request: NextRequest) {
 
     let repositoryUrl = null
     let deploymentUrl = null
-    let repoName = null
+    const repoName = null
 
     // Create repository if requested and token is provided
     if (createRepo && githubToken) {
       try {
-        console.log("Creating GitHub repository...")
+        console.log("Creating GitHub repository…")
+        const baseName = `${username}-portfolio`
+        let repoName = baseName
+        let created = false
+        let attempt = 0
+        const maxAttempts = 5
 
-        // ----- before (delete these three old lines) -----
-        // const repoName = `${username}-portfolio`
-        // const repository = await githubAPI.createRepository({ ... })
-        // repositoryUrl = repository.html_url
-        // ----- after -----
-        const desired = `${username}-portfolio`
-        repoName = await getUniqueRepoName(githubAPI, username, desired)
+        while (!created && attempt < maxAttempts) {
+          if (attempt > 0) repoName = `${baseName}-${attempt}`
 
-        const repository = await githubAPI.createRepository({
-          name: repoName,
-          description: `Portfolio website for ${user.name || user.login}`,
-          private: false,
-          auto_init: true,
-        })
+          try {
+            const repository = await githubAPI.createRepository({
+              name: repoName,
+              description: `Portfolio website for ${user.name || user.login}`,
+              private: false,
+              auto_init: true,
+            })
 
-        repositoryUrl = repository.html_url
+            repositoryUrl = repository.html_url
+            created = true
+          } catch (err: any) {
+            // If the name is taken, try the next suffix; otherwise bubble up
+            const msg = String(err?.message || "")
+            if (
+              msg.includes("name already exists") ||
+              msg.includes("name already taken") ||
+              msg.includes("already exists")
+            ) {
+              attempt += 1
+              continue
+            }
+            throw err
+          }
+        }
 
-        // Wait a moment for repository to be fully created
-        await new Promise((resolve) => setTimeout(resolve, 2000))
+        if (!created) {
+          throw new Error(`Could not create a unique repository after ${maxAttempts} attempts`)
+        }
 
-        // Upload all files to the repository
-        console.log("Uploading files to repository...")
+        // Give GitHub a moment to finish initialising the repo
+        await new Promise((res) => setTimeout(res, 2000))
+
+        console.log("Uploading files to repository…")
         await githubAPI.uploadMultipleFiles(username, repoName, files, "Initial portfolio setup with DevForge")
 
-        // Generate deployment URL (assuming Vercel deployment)
         deploymentUrl = `https://${repoName}.vercel.app`
-
         console.log("Portfolio repository created successfully!")
       } catch (repoError) {
         console.error("Error creating repository:", repoError)
