@@ -56,8 +56,35 @@ export class GitHubAPI {
     return headers
   }
 
+  private async safeJsonParse(response: Response): Promise<any> {
+    const contentType = response.headers.get("content-type")
+    const responseText = await response.text()
+
+    console.log("Response status:", response.status)
+    console.log("Response content-type:", contentType)
+    console.log("Response text (first 200 chars):", responseText.substring(0, 200))
+
+    if (!contentType || !contentType.includes("application/json")) {
+      throw new Error(
+        `GitHub API returned non-JSON response: ${response.status} ${response.statusText}. Response: ${responseText.substring(0, 500)}`,
+      )
+    }
+
+    try {
+      return JSON.parse(responseText)
+    } catch (parseError) {
+      console.error("JSON parse error:", parseError)
+      console.error("Raw response:", responseText)
+      throw new Error(
+        `Invalid JSON response from GitHub API: ${parseError instanceof Error ? parseError.message : "Parse failed"}. Response: ${responseText.substring(0, 500)}`,
+      )
+    }
+  }
+
   async fetchUserData(username: string): Promise<GitHubApiResponse> {
     try {
+      console.log(`Fetching user data for: ${username}`)
+
       // Fetch user profile
       const userResponse = await fetch(`${this.baseUrl}/users/${username}`, {
         headers: this.getHeaders(),
@@ -67,26 +94,35 @@ export class GitHubAPI {
         if (userResponse.status === 404) {
           throw new Error("User not found")
         }
-        throw new Error(`Failed to fetch user data: ${userResponse.statusText}`)
+        const errorText = await userResponse.text()
+        throw new Error(`Failed to fetch user data: ${userResponse.status} ${userResponse.statusText}. ${errorText}`)
       }
 
-      const userData: GitHubUser = await userResponse.json()
+      const userData: GitHubUser = await this.safeJsonParse(userResponse)
+      console.log("User data fetched successfully:", userData.login)
 
       // Fetch user repositories
+      console.log("Fetching user repositories...")
       const reposResponse = await fetch(`${this.baseUrl}/users/${username}/repos?per_page=100&sort=updated`, {
         headers: this.getHeaders(),
       })
 
       if (!reposResponse.ok) {
-        throw new Error(`Failed to fetch repositories: ${reposResponse.statusText}`)
+        const errorText = await reposResponse.text()
+        throw new Error(
+          `Failed to fetch repositories: ${reposResponse.status} ${reposResponse.statusText}. ${errorText}`,
+        )
       }
 
-      const reposData: GitHubRepo[] = await reposResponse.json()
+      const reposData: GitHubRepo[] = await this.safeJsonParse(reposResponse)
+      console.log(`Fetched ${reposData.length} repositories`)
 
       // Filter out forked repositories and sort by stars
       const filteredRepos = reposData
         .filter((repo) => !repo.fork)
         .sort((a, b) => b.stargazers_count - a.stargazers_count)
+
+      console.log(`Filtered to ${filteredRepos.length} non-fork repositories`)
 
       // Fetch README content for top repositories
       const reposWithReadme = await Promise.all(
@@ -97,12 +133,12 @@ export class GitHubAPI {
             })
 
             if (readmeResponse.ok) {
-              const readmeData = await readmeResponse.json()
+              const readmeData = await this.safeJsonParse(readmeResponse)
               const readmeContent = Buffer.from(readmeData.content, "base64").toString("utf-8")
               return { ...repo, readme: readmeContent }
             }
           } catch (error) {
-            console.log(`No README found for ${repo.name}`)
+            console.log(`No README found for ${repo.name}:`, error instanceof Error ? error.message : "Unknown error")
           }
           return repo
         }),
@@ -113,7 +149,7 @@ export class GitHubAPI {
         repos: reposWithReadme,
       }
     } catch (error) {
-      console.error("GitHub API Error:", error)
+      console.error("GitHub API Error in fetchUserData:", error)
       throw error
     }
   }
@@ -124,17 +160,21 @@ export class GitHubAPI {
     }
 
     try {
+      console.log("Validating GitHub token...")
       const response = await fetch(`${this.baseUrl}/user`, {
         headers: this.getHeaders(),
       })
 
       if (!response.ok) {
+        const errorText = await response.text()
+        console.error("Token validation failed:", response.status, errorText)
         return { valid: false }
       }
 
-      const user = await response.json()
+      const user = await this.safeJsonParse(response)
       const scopes = response.headers.get("x-oauth-scopes")?.split(", ") || []
 
+      console.log("Token validated successfully for user:", user.login)
       return {
         valid: true,
         user,
@@ -152,7 +192,8 @@ export class GitHubAPI {
         headers: this.getHeaders(),
       })
       return response.ok
-    } catch {
+    } catch (error) {
+      console.error("Error checking repository existence:", error)
       return false
     }
   }
@@ -205,12 +246,16 @@ export class GitHubAPI {
       console.log("REST API response status:", restResponse.status)
 
       if (restResponse.ok) {
-        const repository = await restResponse.json()
+        const repository = await this.safeJsonParse(restResponse)
         console.log("Repository created successfully via REST API")
         return repository
       }
 
-      const restError = await restResponse.json().catch(() => ({}))
+      const restError = await this.safeJsonParse(restResponse).catch(async () => {
+        const errorText = await restResponse.text()
+        return { message: errorText }
+      })
+
       console.log("REST API error response:", restError)
 
       // If it's a scope/permission issue, try GraphQL
@@ -279,10 +324,11 @@ export class GitHubAPI {
     console.log("GraphQL response status:", response.status)
 
     if (!response.ok) {
-      throw new Error(`GraphQL request failed: ${response.statusText}`)
+      const errorText = await response.text()
+      throw new Error(`GraphQL request failed: ${response.status} ${response.statusText}. ${errorText}`)
     }
 
-    const result = await response.json()
+    const result = await this.safeJsonParse(response)
     console.log("GraphQL response:", result)
 
     if (result.errors) {
@@ -325,50 +371,81 @@ export class GitHubAPI {
         method: "PUT",
         headers: {
           ...this.getHeaders(),
-          Accept: "application/vnd.github+json", // modern media-type
+          Accept: "application/vnd.github+json",
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           message,
           content: encodedContent,
+          branch: "main", // Explicitly specify branch
           ...(sha && { sha }),
         }),
       })
     }
 
-    // --- Retry logic --------------------------------------------------------
-    const maxRetries = 3
+    // Retry logic with exponential backoff
+    const maxRetries = 5
     let delay = 800 // ms
+
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
+        console.log(`Uploading ${path} (attempt ${attempt + 1}/${maxRetries})`)
+
         // If file exists, fetch SHA (optional; ignore 404)
         let sha: string | undefined
         if (attempt === 0) {
-          const getRes = await fetch(url, { headers: this.getHeaders() })
-          if (getRes.ok) sha = (await getRes.json()).sha
+          try {
+            const getRes = await fetch(url, { headers: this.getHeaders() })
+            if (getRes.ok) {
+              const existingFile = await this.safeJsonParse(getRes)
+              sha = existingFile.sha
+            }
+          } catch (error) {
+            console.log(`File ${path} doesn't exist yet, creating new file`)
+          }
         }
 
         const putRes = await doPut(sha)
+
         if (putRes.ok) {
-          return await putRes.json() // ✅ success
+          const result = await this.safeJsonParse(putRes)
+          console.log(`Successfully uploaded: ${path}`)
+          return result
         }
 
-        const msg = (await putRes.json().catch(() => ({}))).message || putRes.statusText
-        // Retry only for “resource not accessible” or 404 (repo not ready)
+        // Try to parse error response safely
+        let errorMessage: string
+        try {
+          const errorData = await this.safeJsonParse(putRes)
+          errorMessage = errorData.message || putRes.statusText
+        } catch {
+          const errorText = await putRes.text()
+          errorMessage = errorText || putRes.statusText
+        }
+
+        console.log(`Upload attempt ${attempt + 1} failed:`, putRes.status, errorMessage)
+
+        // Retry only for specific error conditions
         if (
           attempt < maxRetries - 1 &&
-          (putRes.status === 403 || putRes.status === 404 || /resource not accessible/i.test(msg))
+          (putRes.status === 403 ||
+            putRes.status === 404 ||
+            putRes.status === 500 ||
+            /resource not accessible/i.test(errorMessage) ||
+            /internal server error/i.test(errorMessage))
         ) {
-          console.warn(`PUT ${path} failed (attempt ${attempt + 1}/${maxRetries}) – retrying in ${delay} ms…`)
+          console.warn(`Retrying upload of ${path} in ${delay}ms...`)
           await new Promise((r) => setTimeout(r, delay))
           delay *= 2
           continue
         }
 
-        throw new Error(`Failed to upload ${path}: ${msg}`)
+        throw new Error(`Failed to upload ${path}: ${errorMessage}`)
       } catch (err) {
+        console.error(`Upload error for ${path} (attempt ${attempt + 1}):`, err)
+
         if (attempt < maxRetries - 1) {
-          console.warn(`uploadFile error (attempt ${attempt + 1}/${maxRetries}) – retrying in ${delay} ms…`)
+          console.warn(`Retrying upload of ${path} in ${delay}ms due to error...`)
           await new Promise((r) => setTimeout(r, delay))
           delay *= 2
           continue
@@ -388,9 +465,11 @@ export class GitHubAPI {
       throw new Error("GitHub token is required to upload files")
     }
 
-    console.log(`Uploading ${files.length} files to ${owner}/${repo}`)
+    console.log(`Starting upload of ${files.length} files to ${owner}/${repo}`)
 
     const results = []
+    const errors = []
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       try {
@@ -400,15 +479,26 @@ export class GitHubAPI {
 
         // Small delay to avoid rate limiting
         if (i < files.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 100))
+          await new Promise((resolve) => setTimeout(resolve, 200))
         }
       } catch (error) {
-        console.error(`Failed to upload ${file.path}:`, error)
-        throw new Error(`Failed to upload ${file.path}: ${error instanceof Error ? error.message : "Unknown error"}`)
+        const errorMessage = error instanceof Error ? error.message : "Unknown error"
+        console.error(`Failed to upload ${file.path}:`, errorMessage)
+        errors.push({ file: file.path, error: errorMessage })
+
+        // Continue with other files instead of failing completely
+        continue
       }
     }
 
-    console.log(`Successfully uploaded all ${files.length} files`)
+    if (errors.length > 0) {
+      console.warn(`Upload completed with ${errors.length} errors:`, errors)
+      if (errors.length === files.length) {
+        throw new Error(`All file uploads failed. First error: ${errors[0].error}`)
+      }
+    }
+
+    console.log(`Successfully uploaded ${results.length}/${files.length} files`)
     return results
   }
 }

@@ -19,13 +19,24 @@ async function generateUniqueRepoName(
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const { username, githubToken, createRepo = true } = await request.json()
+  console.log("=== Portfolio Generation API Called ===")
 
-    console.log("=== Portfolio Generation Started ===")
-    console.log("Username:", username)
-    console.log("Create repo:", createRepo)
-    console.log("Token provided:", !!githubToken)
+  try {
+    // Parse request body safely
+    let requestBody
+    try {
+      requestBody = await request.json()
+    } catch (parseError) {
+      console.error("Failed to parse request JSON:", parseError)
+      return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 })
+    }
+
+    const { username, githubToken, createRepo = true } = requestBody
+
+    console.log("Request parameters:")
+    console.log("- Username:", username)
+    console.log("- Create repo:", createRepo)
+    console.log("- Token provided:", !!githubToken)
 
     if (!username) {
       return NextResponse.json({ error: "Username is required" }, { status: 400 })
@@ -35,15 +46,32 @@ export async function POST(request: NextRequest) {
     const githubAPI = new GitHubAPI(githubToken)
 
     // Fetch user data and repositories
-    console.log(`Fetching GitHub data for user: ${username}`)
-    const { user, repos } = await githubAPI.fetchUserData(username)
-    console.log(`Found ${repos.length} repositories for ${user.name || user.login}`)
+    console.log(`=== Fetching GitHub data for user: ${username} ===`)
+    let userData, repos
+    try {
+      const result = await githubAPI.fetchUserData(username)
+      userData = result.user
+      repos = result.repos
+      console.log(`Successfully fetched data for ${userData.name || userData.login}`)
+      console.log(`Found ${repos.length} repositories`)
+    } catch (fetchError) {
+      console.error("Failed to fetch GitHub data:", fetchError)
+      const errorMessage = fetchError instanceof Error ? fetchError.message : "Unknown error"
+      return NextResponse.json({ error: `Failed to fetch GitHub data: ${errorMessage}` }, { status: 400 })
+    }
 
     // Generate portfolio files
-    console.log("Generating portfolio files...")
-    const generator = new PortfolioGenerator()
-    const files = generator.generateAllFiles(user, repos)
-    console.log(`Generated ${files.length} portfolio files`)
+    console.log("=== Generating portfolio files ===")
+    let files
+    try {
+      const generator = new PortfolioGenerator()
+      files = generator.generateAllFiles(userData, repos)
+      console.log(`Generated ${files.length} portfolio files`)
+    } catch (generateError) {
+      console.error("Failed to generate portfolio files:", generateError)
+      const errorMessage = generateError instanceof Error ? generateError.message : "Unknown error"
+      return NextResponse.json({ error: `Failed to generate portfolio files: ${errorMessage}` }, { status: 500 })
+    }
 
     let repositoryUrl = null
     let deploymentUrl = null
@@ -62,7 +90,6 @@ export async function POST(request: NextRequest) {
 
         console.log("Token validated successfully")
         console.log("Authenticated user:", tokenValidation.user?.login)
-        console.log("Token scopes:", tokenValidation.scopes)
 
         // Generate unique repository name
         const baseName = `${username}-portfolio`
@@ -73,7 +100,7 @@ export async function POST(request: NextRequest) {
         console.log("Creating GitHub repository...")
         const repository = await githubAPI.createRepository({
           name: finalRepoName,
-          description: `Portfolio website for ${user.name || user.login} - Generated with DevForge`,
+          description: `Portfolio website for ${userData.name || userData.login} - Generated with DevForge`,
           private: false,
           auto_init: true,
         })
@@ -83,10 +110,10 @@ export async function POST(request: NextRequest) {
 
         // Wait for repository to be fully initialized
         console.log("Waiting for repository initialization...")
-        await new Promise((resolve) => setTimeout(resolve, 3000))
+        await new Promise((resolve) => setTimeout(resolve, 5000)) // Increased wait time
 
         // Upload all portfolio files
-        console.log("Uploading portfolio files...")
+        console.log("=== Uploading portfolio files ===")
         await githubAPI.uploadMultipleFiles(
           tokenValidation.user.login,
           finalRepoName,
@@ -123,7 +150,7 @@ export async function POST(request: NextRequest) {
           {
             error: errorMessage,
             details: repoError instanceof Error ? repoError.message : "Unknown error",
-            user,
+            user: userData,
             repos: repos.slice(0, 6),
             files: files.map((f) => ({ path: f.path, size: f.content.length })),
           },
@@ -132,11 +159,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log("=== Portfolio Generation Completed ===")
+    console.log("=== Portfolio Generation Completed Successfully ===")
 
-    return NextResponse.json({
+    // Return successful response
+    const response = {
       success: true,
-      user,
+      user: userData,
       repos: repos.slice(0, 6), // Return top 6 repos for preview
       files: files.map((f) => ({ path: f.path, size: f.content.length })), // File info without content
       repository: repositoryUrl
@@ -149,24 +177,22 @@ export async function POST(request: NextRequest) {
       message: repositoryUrl
         ? "Portfolio generated and repository created successfully!"
         : "Portfolio generated successfully!",
-    })
-  } catch (error) {
-    console.error("=== Portfolio Generation Error ===")
-    console.error("Error details:", error)
-
-    if (error instanceof Error) {
-      if (error.message.includes("User not found")) {
-        return NextResponse.json({ error: "GitHub user not found" }, { status: 404 })
-      }
-      if (error.message.includes("API rate limit")) {
-        return NextResponse.json({ error: "GitHub API rate limit exceeded. Please try again later." }, { status: 429 })
-      }
     }
+
+    console.log("Sending successful response")
+    return NextResponse.json(response)
+  } catch (error) {
+    console.error("=== Unexpected Portfolio Generation Error ===")
+    console.error("Error details:", error)
+    console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace")
+
+    const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
 
     return NextResponse.json(
       {
         error: "Failed to generate portfolio",
-        details: error instanceof Error ? error.message : "Unknown error occurred",
+        details: errorMessage,
+        timestamp: new Date().toISOString(),
       },
       { status: 500 },
     )
