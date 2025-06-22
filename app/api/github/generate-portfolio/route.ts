@@ -2,9 +2,30 @@ import { type NextRequest, NextResponse } from "next/server"
 import { GitHubAPI } from "@/lib/github-api"
 import { PortfolioGenerator } from "@/lib/portfolio-generator"
 
+async function generateUniqueRepoName(
+  githubAPI: GitHubAPI,
+  username: string,
+  baseName: string,
+  maxAttempts = 10,
+): Promise<string> {
+  for (let i = 0; i < maxAttempts; i++) {
+    const repoName = i === 0 ? baseName : `${baseName}-${i}`
+    const exists = await githubAPI.checkRepositoryExists(username, repoName)
+    if (!exists) {
+      return repoName
+    }
+  }
+  throw new Error(`Could not generate unique repository name after ${maxAttempts} attempts`)
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { username, githubToken, createRepo = true } = await request.json()
+
+    console.log("=== Portfolio Generation Started ===")
+    console.log("Username:", username)
+    console.log("Create repo:", createRepo)
+    console.log("Token provided:", !!githubToken)
 
     if (!username) {
       return NextResponse.json({ error: "Username is required" }, { status: 400 })
@@ -14,73 +35,104 @@ export async function POST(request: NextRequest) {
     const githubAPI = new GitHubAPI(githubToken)
 
     // Fetch user data and repositories
-    console.log(`Fetching data for user: ${username}`)
+    console.log(`Fetching GitHub data for user: ${username}`)
     const { user, repos } = await githubAPI.fetchUserData(username)
+    console.log(`Found ${repos.length} repositories for ${user.name || user.login}`)
 
     // Generate portfolio files
     console.log("Generating portfolio files...")
     const generator = new PortfolioGenerator()
     const files = generator.generateAllFiles(user, repos)
+    console.log(`Generated ${files.length} portfolio files`)
 
     let repositoryUrl = null
     let deploymentUrl = null
-    const repoName = null
+    let finalRepoName = null
 
     // Create repository if requested and token is provided
     if (createRepo && githubToken) {
       try {
-        console.log("Creating GitHub repository…")
+        console.log("=== Repository Creation Started ===")
+
+        // Validate token first
+        const tokenValidation = await githubAPI.validateToken()
+        if (!tokenValidation.valid) {
+          throw new Error("Invalid GitHub token. Please check your token and try again.")
+        }
+
+        console.log("Token validated successfully")
+        console.log("Authenticated user:", tokenValidation.user?.login)
+        console.log("Token scopes:", tokenValidation.scopes)
+
+        // Generate unique repository name
         const baseName = `${username}-portfolio`
-        let repoName = baseName
-        let created = false
-        let attempt = 0
-        const maxAttempts = 5
+        finalRepoName = await generateUniqueRepoName(githubAPI, tokenValidation.user.login, baseName)
+        console.log("Using repository name:", finalRepoName)
 
-        while (!created && attempt < maxAttempts) {
-          if (attempt > 0) repoName = `${baseName}-${attempt}`
+        // Create the repository
+        console.log("Creating GitHub repository...")
+        const repository = await githubAPI.createRepository({
+          name: finalRepoName,
+          description: `Portfolio website for ${user.name || user.login} - Generated with DevForge`,
+          private: false,
+          auto_init: true,
+        })
 
-          try {
-            const repository = await githubAPI.createRepository({
-              name: repoName,
-              description: `Portfolio website for ${user.name || user.login}`,
-              private: false,
-              auto_init: true,
-            })
+        repositoryUrl = repository.html_url
+        console.log("Repository created successfully:", repositoryUrl)
 
-            repositoryUrl = repository.html_url
-            created = true
-          } catch (err: any) {
-            // If the name is taken, try the next suffix; otherwise bubble up
-            const msg = String(err?.message || "")
-            if (
-              msg.includes("name already exists") ||
-              msg.includes("name already taken") ||
-              msg.includes("already exists")
-            ) {
-              attempt += 1
-              continue
-            }
-            throw err
+        // Wait for repository to be fully initialized
+        console.log("Waiting for repository initialization...")
+        await new Promise((resolve) => setTimeout(resolve, 3000))
+
+        // Upload all portfolio files
+        console.log("Uploading portfolio files...")
+        await githubAPI.uploadMultipleFiles(
+          tokenValidation.user.login,
+          finalRepoName,
+          files,
+          "🚀 Initial portfolio setup with DevForge",
+        )
+
+        // Generate deployment URL
+        deploymentUrl = `https://${finalRepoName}.vercel.app`
+
+        console.log("=== Repository Creation Completed Successfully ===")
+      } catch (repoError) {
+        console.error("=== Repository Creation Failed ===")
+        console.error("Error details:", repoError)
+
+        // Provide more specific error messages
+        let errorMessage = "Failed to create repository"
+        if (repoError instanceof Error) {
+          if (repoError.message.includes("Invalid GitHub token")) {
+            errorMessage = "Invalid GitHub token. Please check your token and permissions."
+          } else if (repoError.message.includes("already exists")) {
+            errorMessage = "Repository name already exists. Please try again."
+          } else if (repoError.message.includes("rate limit")) {
+            errorMessage = "GitHub API rate limit exceeded. Please try again later."
+          } else if (repoError.message.includes("scope") || repoError.message.includes("permission")) {
+            errorMessage = "Insufficient token permissions. Please ensure your token has 'repo' or 'public_repo' scope."
+          } else {
+            errorMessage = `Repository creation failed: ${repoError.message}`
           }
         }
 
-        if (!created) {
-          throw new Error(`Could not create a unique repository after ${maxAttempts} attempts`)
-        }
-
-        // Give GitHub a moment to finish initialising the repo
-        await new Promise((res) => setTimeout(res, 2000))
-
-        console.log("Uploading files to repository…")
-        await githubAPI.uploadMultipleFiles(username, repoName, files, "Initial portfolio setup with DevForge")
-
-        deploymentUrl = `https://${repoName}.vercel.app`
-        console.log("Portfolio repository created successfully!")
-      } catch (repoError) {
-        console.error("Error creating repository:", repoError)
-        // Continue without repository creation
+        // Return error but continue with file generation
+        return NextResponse.json(
+          {
+            error: errorMessage,
+            details: repoError instanceof Error ? repoError.message : "Unknown error",
+            user,
+            repos: repos.slice(0, 6),
+            files: files.map((f) => ({ path: f.path, size: f.content.length })),
+          },
+          { status: 500 },
+        )
       }
     }
+
+    console.log("=== Portfolio Generation Completed ===")
 
     return NextResponse.json({
       success: true,
@@ -90,7 +142,7 @@ export async function POST(request: NextRequest) {
       repository: repositoryUrl
         ? {
             url: repositoryUrl,
-            name: repoName,
+            name: finalRepoName,
             deploymentUrl,
           }
         : null,
@@ -99,17 +151,24 @@ export async function POST(request: NextRequest) {
         : "Portfolio generated successfully!",
     })
   } catch (error) {
-    console.error("Portfolio generation error:", error)
+    console.error("=== Portfolio Generation Error ===")
+    console.error("Error details:", error)
 
     if (error instanceof Error) {
       if (error.message.includes("User not found")) {
         return NextResponse.json({ error: "GitHub user not found" }, { status: 404 })
       }
       if (error.message.includes("API rate limit")) {
-        return NextResponse.json({ error: "GitHub API rate limit exceeded" }, { status: 429 })
+        return NextResponse.json({ error: "GitHub API rate limit exceeded. Please try again later." }, { status: 429 })
       }
     }
 
-    return NextResponse.json({ error: "Failed to generate portfolio" }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Failed to generate portfolio",
+        details: error instanceof Error ? error.message : "Unknown error occurred",
+      },
+      { status: 500 },
+    )
   }
 }
