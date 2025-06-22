@@ -1,5 +1,6 @@
 # 🚀 DevForge - Dynamic Portfolio Generator
 
+*Automatically synced with your [v0.dev](https://v0.dev) deployments*
 
 <div align="center">
 
@@ -76,7 +77,7 @@ DevForge embraces a **modern glassmorphic design** that combines elegance with f
 
 ### **Glassmorphic Navigation**
 
-\`\`\`css
+```css
 /* Core glassmorphic styling */
 .glassmorphic-nav {
   background: rgba(255, 255, 255, 0.1);
@@ -85,7 +86,7 @@ DevForge embraces a **modern glassmorphic design** that combines elegance with f
   border-radius: 16px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 }
-\`\`\`
+```
 
 ### **Design Principles**
 
@@ -142,48 +143,48 @@ DevForge embraces a **modern glassmorphic design** that combines elegance with f
 
 2. **Install dependencies**
 
-   \`\`\`bash
+   ```bash
    npm install
    # or
    yarn install
-   \`\`\`
+   ```
 
 3. **Set up environment variables**
 
-   \`\`\`bash
+   ```bash
    cp .env.example .env.local
-   \`\`\`
+   ```
 
    Add your environment variables:
 
-   \`\`\`env
+   ```env
    NEXT_PUBLIC_BASE_URL=http://localhost:3000
    GITHUB_TOKEN=your_github_personal_access_token
-   \`\`\`
+   ```
 
 4. **Run the development server**
 
-   \`\`\`bash
+   ```bash
    npm run dev
    # or
    yarn dev
-   \`\`\`
+   ```
 
 5. **Open your browser**
    Navigate to [http://localhost:3000](http://localhost:3000)
 
 ### **First Portfolio**
 
-\`\`\`bash
+```bash
 # Generate a portfolio for a GitHub user
 curl http://localhost:3000/api/github/octocat
-\`\`\`
+```
 
 ---
 
 ## 📁 Project Structure
 
-\`\`\`plaintext
+```plaintext
 devforge/
 ├── app/                          # Next.js App Router
 │   ├── api/                      # API routes
@@ -219,4 +220,4 @@ devforge/
 ├── tailwind.config.ts            # Tailwind configuration
 ├── tsconfig.json                 # TypeScript configuration
 └── package.json                  # Dependencies
-\`\`\`
+```
