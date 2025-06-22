@@ -118,20 +118,23 @@ export class GitHubAPI {
     }
   }
 
-  async createRepository(
-    username: string,
-    repoData: {
-      name: string
-      description: string
-      private: boolean
-      auto_init: boolean
-    },
-  ) {
+  async createRepository(repoData: {
+    name: string
+    description?: string
+    private?: boolean
+    auto_init?: boolean
+  }) {
     if (!this.token) {
-      throw new Error("GitHub token is required to create repositories")
+      throw new Error("A GitHub Personal Access Token with repo creation permission is required.")
     }
 
-    const response = await fetch(`${this.baseUrl}/user/repos`, {
+    // 🔍 Validate token first – helps us fail fast with a clearer error.
+    const me = await fetch(`${this.baseUrl}/user`, { headers: this.getHeaders() })
+    if (me.status === 401) {
+      throw new Error("Invalid GitHub token (401 Unauthorized)")
+    }
+
+    const res = await fetch(`${this.baseUrl}/user/repos`, {
       method: "POST",
       headers: {
         ...this.getHeaders(),
@@ -140,12 +143,21 @@ export class GitHubAPI {
       body: JSON.stringify(repoData),
     })
 
-    if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(`Failed to create repository: ${errorData.message}`)
+    if (!res.ok) {
+      const { message, errors } = await res.json()
+      if (message?.includes("Resource not accessible")) {
+        throw new Error(
+          "GitHub denied repository creation. Make sure your PAT is:\n" +
+            "• Classic token with `repo` or `public_repo` scope\n" +
+            "• OR Fine-grained token that explicitly allows ‘Repository creation’ and ‘Contents: Read & write’.",
+        )
+      }
+      throw new Error(
+        `GitHub repo creation failed: ${message ?? res.statusText} ${errors ? JSON.stringify(errors) : ""}`,
+      )
     }
 
-    return await response.json()
+    return res.json()
   }
 
   async uploadFile(username: string, repoName: string, filePath: string, content: string, message: string) {

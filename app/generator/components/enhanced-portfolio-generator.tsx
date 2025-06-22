@@ -127,7 +127,14 @@ export function EnhancedPortfolioGenerator() {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to generate portfolio")
+        throw new Error(
+          data.error
+            ?.toString()
+            .replace(
+              "Resource not accessible by personal access token",
+              "GitHub refused to create the repo. Ensure your token is classic (`repo` scope) or fine-grained with repo-creation permission.",
+            ) || "Failed to generate portfolio",
+        )
       }
 
       setResult(data)
@@ -195,15 +202,9 @@ export function EnhancedPortfolioGenerator() {
               className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-400 focus:border-blue-500"
             />
             <p className="text-xs text-gray-400">
-              Required only if you want to create a repository automatically.
-              <a
-                href="https://github.com/settings/tokens"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-400 hover:text-blue-300 ml-1"
-              >
-                Generate token →
-              </a>
+              A&nbsp;token with <code className="font-mono">repo</code> or&nbsp;
+              <code className="font-mono">public_repo</code> scope (Classic) &nbsp; or a&nbsp;Fine-grained token that
+              includes “Repository creation” permission is required.
             </p>
           </div>
 
