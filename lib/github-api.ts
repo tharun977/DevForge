@@ -1,293 +1,219 @@
-interface GitHubUser {
-  login: string
-  name: string
-  bio: string
-  avatar_url: string
-  html_url: string
-  public_repos: number
-  followers: number
-  following: number
-  location: string
-  company: string
-  blog: string
-  email: string
-  created_at: string
-  updated_at: string
-}
-
-interface GitHubRepo {
-  id: number
-  name: string
-  description: string
-  html_url: string
-  stargazers_count: number
-  forks_count: number
-  language: string
-  topics: string[]
-  homepage: string
-  created_at: string
-  updated_at: string
-  readme?: string
-}
-
-interface GitHubApiResponse {
-  user: GitHubUser
-  repos: GitHubRepo[]
-}
-
+//**\
+* A simple wrapper around the GitHub REST and GraphQL APIs.
+ *\
+ * It handles authentication and provides methods
+for common tasks.\
+ */
 export class GitHubAPI {
-  private baseUrl = "https://api.github.com"
-  private token?: string
+ {2}private token: string | undefined
+ {2}private baseUrl: string
+\
+  constructor(token?: string, baseUrl: string = "https://api.github.com")
+{
+  this.token = token
+  this.baseUrl = baseUrl
+}
+\
+  getHeaders()
+{
+  return {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${this.token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+    }
+}
 
-  constructor(token?: string) {
-    this.token = token
+/**
+ * Gets the authenticated user's profile.
+ */ \
+  async getUser()
+{
+  if (!this.token) {
+    throw new Error("A GitHub Personal Access Token is required.")
   }
 
-  private getHeaders() {
-    const headers: Record<string, string> = {
-      Accept: "application/vnd.github.v3+json",
-      "User-Agent": "DevForge-Portfolio-Generator",
-    }
+  const res = await fetch(`${this.baseUrl}/user`, { headers: this.getHeaders() })
 
-    if (this.token) {
-      headers["Authorization"] = `token ${this.token}`
-    }
-
-    return headers
+  if (!res.ok) {
+    throw new Error(`GitHub API error: ${res.status} ${res.statusText}`)
   }
 
-  async fetchUserData(username: string): Promise<GitHubApiResponse> {
-    try {
-      // Fetch user profile
-      const userResponse = await fetch(`${this.baseUrl}/users/${username}`, {
-        headers: this.getHeaders(),
-      })
+  return await res.json()
+}
 
-      if (!userResponse.ok) {
-        if (userResponse.status === 404) {
-          throw new Error("User not found")
-        }
-        throw new Error(`Failed to fetch user data: ${userResponse.statusText}`)
-      }
+/**
+ * Gets a user's profile by username.
+ */ \
+  async getUserByUsername(username: string)
+{
+  const res = await fetch(`${this.baseUrl}/users/${username}`, { headers: this.getHeaders() })
 
-      const userData: GitHubUser = await userResponse.json()
-
-      // Fetch user repositories
-      const reposResponse = await fetch(`${this.baseUrl}/users/${username}/repos?per_page=100&sort=updated`, {
-        headers: this.getHeaders(),
-      })
-
-      if (!reposResponse.ok) {
-        throw new Error(`Failed to fetch repositories: ${reposResponse.statusText}`)
-      }
-
-      const reposData: GitHubRepo[] = await reposResponse.json()
-
-      // Filter out forked repositories and sort by stars
-      const filteredRepos = reposData
-        .filter((repo) => !repo.fork)
-        .sort((a, b) => b.stargazers_count - a.stargazers_count)
-
-      // Fetch README content for top repositories
-      const reposWithReadme = await Promise.all(
-        filteredRepos.slice(0, 10).map(async (repo) => {
-          try {
-            const readmeResponse = await fetch(`${this.baseUrl}/repos/${username}/${repo.name}/readme`, {
-              headers: this.getHeaders(),
-            })
-
-            if (readmeResponse.ok) {
-              const readmeData = await readmeResponse.json()
-              const readmeContent = Buffer.from(readmeData.content, "base64").toString("utf-8")
-              return { ...repo, readme: readmeContent }
-            }
-          } catch (error) {
-            console.log(`No README found for ${repo.name}`)
-          }
-          return repo
-        }),
-      )
-
-      return {
-        user: userData,
-        repos: reposWithReadme,
-      }
-    } catch (error) {
-      console.error("GitHub API Error:", error)
-      throw error
-    }
+  if (!res.ok) {
+    throw new Error(`GitHub API error: ${res.status} ${res.statusText}`)
   }
 
-  async createRepository(repoData: {
-    name: string
+  return await res.json()
+}
+
+/**
+ * Lists the repositories for a user.
+ */ \
+  async listRepositories(username: string)
+{
+  const res = await fetch(`${this.baseUrl}/users/${username}/repos`, { headers: this.getHeaders() })
+
+  if (!res.ok) {
+    throw new Error(`GitHub API error: ${res.status} ${res.statusText}`)
+  }
+
+  return await res.json()
+}
+
+/**
+ * Gets a repository by owner and name.
+ */ \
+  async getRepository(owner: string, repo: string)
+{
+  const res = await fetch(`${this.baseUrl}/repos/${owner}/${repo}`, { headers: this.getHeaders() })
+
+  if (!res.ok) {
+    throw new Error(`GitHub API error: ${res.status} ${res.statusText}`)
+  }
+
+  return await res.json()
+}
+
+/**
+ * Creates a repository for the authenticated user.
+ * Falls back to the GraphQL API when the REST call is not permitted
+ * (typical with fine-grained tokens).
+ */ \
+  async createRepository(opts:
+{
+  name: string
+  \
     description?: string
     private?: boolean
-    auto_init?: boolean
-  }) {
-    if (!this.token) {
-      throw new Error("A GitHub Personal Access Token with repo creation permission is required.")
-    }
-
-    // 🔍 Validate token first – helps us fail fast with a clearer error.
-    const me = await fetch(`${this.baseUrl}/user`, { headers: this.getHeaders() })
-    if (me.status === 401) {
-      throw new Error("Invalid GitHub token (401 Unauthorized)")
-    }
-
-    const res = await fetch(`${this.baseUrl}/user/repos`, {
-      method: "POST",
-      headers: {
-        ...this.getHeaders(),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(repoData),
-    })
-
-    if (!res.ok) {
-      const { message, errors } = await res.json()
-      if (message?.includes("Resource not accessible")) {
-        throw new Error(
-          "GitHub denied repository creation. Make sure your PAT is:\n" +
-            "• Classic token with `repo` or `public_repo` scope\n" +
-            "• OR Fine-grained token that explicitly allows ‘Repository creation’ and ‘Contents: Read & write’.",
-        )
-      }
-      throw new Error(
-        `GitHub repo creation failed: ${message ?? res.statusText} ${errors ? JSON.stringify(errors) : ""}`,
-      )
-    }
-
-    return res.json()
+    auto_init?: boolean\
+}
+)
+{
+  if (!this.token) {
+    throw new Error("A GitHub Personal Access Token is required.")
   }
 
-  async uploadFile(username: string, repoName: string, filePath: string, content: string, message: string) {
-    if (!this.token) {
-      throw new Error("GitHub token is required to upload files")
-    }
-
-    const encodedContent = Buffer.from(content).toString("base64")
-
-    const response = await fetch(`${this.baseUrl}/repos/${username}/${repoName}/contents/${filePath}`, {
-      method: "PUT",
-      headers: {
-        ...this.getHeaders(),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        message,
-        content: encodedContent,
-      }),
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(`Failed to upload file: ${errorData.message}`)
-    }
-
-    return await response.json()
+  // Validate token first (fails fast if invalid)
+  const me = await fetch(`${this.baseUrl}/user`, { headers: this.getHeaders() })
+  if (me.status === 401) {
+    throw new Error("Invalid GitHub token (401 Unauthorized)")
   }
 
-  async uploadMultipleFiles(
-    username: string,
-    repoName: string,
-    files: Array<{
-      path: string
-      content: string
-    }>,
-    message: string,
-  ) {
-    if (!this.token) {
-      throw new Error("GitHub token is required to upload files")
-    }
+  /* ---------- 1) Attempt REST (works for Classic tokens) ---------- */
+  const restRes = await fetch(`${this.baseUrl}/user/repos`, {
+    method: "POST",
+    headers: { ...this.getHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...opts,
+      // GitHub ignores `auto_init` when `private` is false, but keep for Classic tokens
+      auto_init: opts.auto_init ?? true,
+    }),
+  })
 
-    // Get the latest commit SHA
-    const branchResponse = await fetch(`${this.baseUrl}/repos/${username}/${repoName}/git/refs/heads/main`, {
-      headers: this.getHeaders(),
-    })
-
-    if (!branchResponse.ok) {
-      throw new Error("Failed to get branch information")
-    }
-
-    const branchData = await branchResponse.json()
-    const latestCommitSha = branchData.object.sha
-
-    // Get the tree SHA from the latest commit
-    const commitResponse = await fetch(`${this.baseUrl}/repos/${username}/${repoName}/git/commits/${latestCommitSha}`, {
-      headers: this.getHeaders(),
-    })
-
-    if (!commitResponse.ok) {
-      throw new Error("Failed to get commit information")
-    }
-
-    const commitData = await commitResponse.json()
-    const baseTreeSha = commitData.tree.sha
-
-    // Create tree with all files
-    const tree = files.map((file) => ({
-      path: file.path,
-      mode: "100644",
-      type: "blob",
-      content: file.content,
-    }))
-
-    const treeResponse = await fetch(`${this.baseUrl}/repos/${username}/${repoName}/git/trees`, {
-      method: "POST",
-      headers: {
-        ...this.getHeaders(),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        base_tree: baseTreeSha,
-        tree,
-      }),
-    })
-
-    if (!treeResponse.ok) {
-      throw new Error("Failed to create tree")
-    }
-
-    const treeData = await treeResponse.json()
-
-    // Create commit
-    const newCommitResponse = await fetch(`${this.baseUrl}/repos/${username}/${repoName}/git/commits`, {
-      method: "POST",
-      headers: {
-        ...this.getHeaders(),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        message,
-        tree: treeData.sha,
-        parents: [latestCommitSha],
-      }),
-    })
-
-    if (!newCommitResponse.ok) {
-      throw new Error("Failed to create commit")
-    }
-
-    const newCommitData = await newCommitResponse.json()
-
-    // Update reference
-    const updateRefResponse = await fetch(`${this.baseUrl}/repos/${username}/${repoName}/git/refs/heads/main`, {
-      method: "PATCH",
-      headers: {
-        ...this.getHeaders(),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        sha: newCommitData.sha,
-      }),
-    })
-
-    if (!updateRefResponse.ok) {
-      throw new Error("Failed to update reference")
-    }
-
-    return await updateRefResponse.json()
+  if (restRes.ok) {
+    return restRes.json() // { html_url, name, ... }
   }
+
+  const restBody = await restRes.json().catch(() => ({}) as any)
+  const restMessage = restBody?.message || restRes.statusText
+
+  // If the user is using a fine-grained token, REST will return
+  // "Resource not accessible by personal access token" (403)
+  if (restRes.status === 403 && /resource not accessible/i.test(restMessage)) {
+    /* ---------- 2) Fallback: GraphQL mutation (fine-grained PATs) ---------- */
+    const gqlRes = await fetch(`${this.baseUrl}/graphql`, {
+      method: "POST",
+      headers: { ...this.getHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: `
+            mutation CreateRepo($name: String!, $visibility: RepositoryVisibility!, $description: String) {
+              createRepository(input: {name: $name, visibility: $visibility, description: $description}) {
+                repository { name url }
+              }
+            }
+          `,
+        variables: {
+          name: opts.name,
+          visibility: opts.private ? "PRIVATE" : "PUBLIC",
+          description: opts.description ?? "",
+        },
+      }),
+    })
+
+    const gqlJson = await gqlRes.json()
+
+    if (gqlRes.ok && gqlJson?.data?.createRepository?.repository) {
+      // Normalise to the REST shape we expect elsewhere
+      return {
+          name: gqlJson.data.createRepository.repository.name,
+          html_url: gqlJson.data.createRepository.repository.url,
+        }
+    }
+
+    const gqlErrors =
+      gqlJson?.errors?.map((e: any) => e.message).join("; ") || "GraphQL repo creation failed without details."
+    throw new Error(`GitHub repo creation failed: ${gqlErrors}`)
+  }
+
+  // Any other REST failure bubbles up
+  throw new Error(`GitHub repo creation failed: ${restMessage}`)
 }
 
-export type { GitHubUser, GitHubRepo, GitHubApiResponse }
+/**
+ * Uploads a file to a repository.
+ */ \
+  async uploadFile(
+    owner: string,
+    repo: string,
+    path: string,
+    content: string,
+    message: string,
+    branch: string = "main",
+  )
+{
+  const url = `${this.baseUrl}/repos/${owner}/${repo}/contents/${path}`
+
+  // First, try to get the file to see if it exists
+  let sha: string | undefined
+  try {
+    const getRes = await fetch(url, { headers: this.getHeaders() })
+    if (getRes.ok) {
+      const getJson = await getRes.json()
+      sha = getJson.sha
+    }
+  } catch (e) {
+    // Ignore errors, assume the file doesn't exist
+  }
+
+  const method = sha ? "PUT" : "POST"
+
+  const res = await fetch(url, {
+    method,
+    headers: { ...this.getHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message,
+      content: Buffer.from(content).toString("base64"),
+      branch,
+      sha, // Required for updates
+    }),
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}) as any)
+    const message = body?.message || res.statusText
+    throw new Error(`GitHub file upload failed: ${message}`)
+  }
+
+  return await res.json()
+}
+\
+}
