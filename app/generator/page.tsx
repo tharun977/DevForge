@@ -1,5 +1,5 @@
 import { Suspense } from "react"
-import { PortfolioGenerator } from "./components/portfolio-generator"
+import { EnhancedPortfolioGenerator } from "./components/enhanced-portfolio-generator"
 import { GeneratorHeader } from "./components/generator-header"
 
 export default function GeneratorPage() {
@@ -11,11 +11,11 @@ export default function GeneratorPage() {
           fallback={
             <div className="flex items-center justify-center py-20">
               <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-              <span className="ml-3 text-gray-400">Loading AI Playground...</span>
+              <span className="ml-3 text-gray-400">Loading Enhanced AI Playground...</span>
             </div>
           }
         >
-          <PortfolioGenerator />
+          <EnhancedPortfolioGenerator />
         </Suspense>
       </div>
     </div>
